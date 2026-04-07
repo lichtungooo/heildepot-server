@@ -190,9 +190,13 @@ app.get('/api/blog/:slug', (req, res) => {
 // ═══════════════════════════════════════════════════════════
 
 // Admin Login
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@heildepot.de'
+const ADMIN_PASS = process.env.ADMIN_PASS || 'admin123'
+console.log('[Admin] Login konfiguriert fuer:', ADMIN_EMAIL)
+
 app.post('/api/admin/login', (req, res) => {
   const { email, passwort } = req.body
-  if (email === process.env.ADMIN_EMAIL && passwort === process.env.ADMIN_PASS) {
+  if (email === ADMIN_EMAIL && passwort === ADMIN_PASS) {
     const token = jwt.sign({ id: 0, email, admin: true }, JWT_SECRET, { expiresIn: '7d' })
     return res.json({ token, admin: true })
   }
