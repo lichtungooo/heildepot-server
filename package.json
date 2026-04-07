@@ -1,0 +1,21 @@
+{
+  "name": "heildepot-server",
+  "version": "1.0.0",
+  "description": "Backend fuer den Heildepot Freundeskreis — Mail, Blog, Newsletter, Admin",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "sql.js": "^1.11.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "marked": "^15.0.6",
+    "nodemailer": "^6.10.0"
+  }
+}
