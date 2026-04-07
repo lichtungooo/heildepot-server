@@ -3,7 +3,7 @@ import nodemailer from 'nodemailer'
 let transporter = null
 
 export function initMail() {
-  if (process.env.MAIL_HOST === 'smtp.example.com') {
+  if (!process.env.MAIL_HOST || process.env.MAIL_HOST === 'smtp.example.com') {
     console.log('[Mail] SMTP nicht konfiguriert — Mails werden nur geloggt')
     return
   }
@@ -21,6 +21,20 @@ export function initMail() {
   transporter.verify()
     .then(() => console.log('[Mail] SMTP verbunden'))
     .catch(err => console.error('[Mail] SMTP Fehler:', err.message))
+}
+
+export function reloadMail() {
+  transporter = null
+  initMail()
+}
+
+export async function sendTestMail(to) {
+  return sendMail({
+    to,
+    subject: 'Heildepot — SMTP Test',
+    html: '<h2 style="color:#7dab5a">SMTP funktioniert!</h2><p>Diese Test-Mail wurde vom Heildepot-Server gesendet.</p>',
+    text: 'SMTP funktioniert! Diese Test-Mail wurde vom Heildepot-Server gesendet.',
+  })
 }
 
 export async function sendMail({ to, subject, html, text }) {

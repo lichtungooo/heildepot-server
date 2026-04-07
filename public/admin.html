@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Heildepot Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config = { theme: { extend: { colors: { green: { main: '#7dab5a', dark: '#5a8a3a', pale: '#e8f0de', light: '#a3c97a' }, gold: { DEFAULT: '#c9a84c', light: '#f5ecd4' } } } } }</script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; background: #f9faf7; }
+    .tab-active { border-bottom: 2px solid #7dab5a; color: #7dab5a; font-weight: 600; }
+    textarea { min-height: 200px; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+<script>
+const API = window.location.origin + '/api'
+let token = localStorage.getItem('heildepot_admin_token')
+
+// ─── RENDER ────────────────────────────────────────────
+function render() {
+  const app = document.getElementById('app')
+  if (!token) { app.innerHTML = renderLogin(); return }
+  app.innerHTML = renderShell()
+  loadTab(localStorage.getItem('admin_tab') || 'dashboard')
+}
+
+// ─── LOGIN ─────────────────────────────────────────────
+function renderLogin() {
+  return `
+    <div class="min-h-screen flex items-center justify-center">
+      <div class="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm">
+        <div class="text-center mb-6">
+          <div class="w-16 h-16 rounded-full bg-green-pale flex items-center justify-center mx-auto mb-3">
+            <svg width="32" height="32" viewBox="0 0 100 100"><rect x="30" y="8" width="40" height="84" rx="16" fill="#7dab5a"/><rect x="8" y="30" width="84" height="40" rx="16" fill="#7dab5a"/></svg>
+          </div>
+          <h1 class="text-xl font-bold text-gray-800">Heildepot Admin</h1>
+        </div>
+        <form onsubmit="doLogin(event)">
+          <input id="login-email" type="email" placeholder="Admin E-Mail" class="w-full px-4 py-3 rounded-lg border border-gray-200 text-sm mb-3 focus:outline-none focus:border-green-main" required>
+          <input id="login-pass" type="password" placeholder="Passwort" class="w-full px-4 py-3 rounded-lg border border-gray-200 text-sm mb-3 focus:outline-none focus:border-green-main" required>
+          <div id="login-error" class="text-red-500 text-xs mb-3 hidden"></div>
+          <button type="submit" class="w-full py-3 rounded-xl bg-green-main text-white font-medium hover:bg-green-dark transition-colors">Anmelden</button>
+        </form>
+      </div>
+    </div>`
+}
+
+async function doLogin(e) {
+  e.preventDefault()
+  const email = document.getElementById('login-email').value
+  const pass = document.getElementById('login-pass').value
+  try {
+    const res = await api('/admin/login', 'POST', { email, passwort: pass })
+    token = res.token
+    localStorage.setItem('heildepot_admin_token', token)
+    render()
+  } catch (err) {
+    const el = document.getElementById('login-error')
+    el.textContent = err.message
+    el.classList.remove('hidden')
+  }
+}
+
+// ─── SHELL ─────────────────────────────────────────────
+function renderShell() {
+  return `
+    <div class="min-h-screen">
+      <header class="bg-white border-b border-gray-100 sticky top-0 z-10">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <svg width="28" height="28" viewBox="0 0 100 100"><rect x="30" y="8" width="40" height="84" rx="16" fill="#7dab5a"/><rect x="8" y="30" width="84" height="40" rx="16" fill="#7dab5a"/></svg>
+            <span class="font-bold text-gray-800">Heildepot Admin</span>
+          </div>
+          <button onclick="doLogout()" class="text-sm text-gray-400 hover:text-red-500 transition-colors">Abmelden</button>
+        </div>
+        <nav class="max-w-6xl mx-auto px-4 flex gap-1">
+          ${['dashboard','anfragen','users','blog','newsletter','settings'].map(t =>
+            `<button onclick="loadTab('${t}')" id="tab-${t}" class="px-4 py-2.5 text-sm transition-colors border-b-2 border-transparent hover:text-green-main">${t.charAt(0).toUpperCase()+t.slice(1)}</button>`
+          ).join('')}
+        </nav>
+      </header>
+      <main id="tab-content" class="max-w-6xl mx-auto px-4 py-6"></main>
+    </div>`
+}
+
+function doLogout() {
+  token = null
+  localStorage.removeItem('heildepot_admin_token')
+  render()
+}
+
+// ─── TABS ──────────────────────────────────────────────
+async function loadTab(name) {
+  localStorage.setItem('admin_tab', name)
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('tab-active'))
+  document.getElementById('tab-' + name)?.classList.add('tab-active')
+  const el = document.getElementById('tab-content')
+  el.innerHTML = '<p class="text-gray-400 text-center py-12">Laden...</p>'
+
+  try {
+    switch(name) {
+      case 'dashboard': el.innerHTML = await renderDashboard(); break
+      case 'anfragen': el.innerHTML = await renderAnfragen(); break
+      case 'users': el.innerHTML = await renderUsers(); break
+      case 'blog': el.innerHTML = await renderBlog(); break
+      case 'newsletter': el.innerHTML = await renderNewsletter(); break
+      case 'settings': el.innerHTML = renderSettings(); break
+    }
+  } catch (err) {
+    el.innerHTML = `<p class="text-red-500 text-center py-12">${err.message}</p>`
+  }
+}
+
+// ─── DASHBOARD ─────────────────────────────────────────
+async function renderDashboard() {
+  const s = await api('/admin/stats')
+  return `
+    <h2 class="text-2xl font-bold text-gray-800 mb-6">Dashboard</h2>
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+      ${statCard('Mitglieder', s.users, 'bg-green-pale text-green-dark')}
+      ${statCard('Verifiziert', s.verifiziert, 'bg-green-pale text-green-dark')}
+      ${statCard('Newsletter-Abos', s.newsletter_abonnenten, 'bg-blue-50 text-blue-700')}
+      ${statCard('Anfragen gesamt', s.anfragen, 'bg-gray-50 text-gray-700')}
+      ${statCard('Neue Anfragen', s.neue_anfragen, s.neue_anfragen > 0 ? 'bg-red-50 text-red-600 font-bold' : 'bg-gray-50 text-gray-700')}
+      ${statCard('Blog-Posts', s.blog_posts, 'bg-purple-50 text-purple-700')}
+    </div>`
+}
+
+function statCard(label, value, classes) {
+  return `<div class="rounded-xl p-5 ${classes}">
+    <p class="text-3xl font-bold">${value}</p>
+    <p class="text-sm mt-1 opacity-70">${label}</p>
+  </div>`
+}
+
+// ─── ANFRAGEN ──────────────────────────────────────────
+async function renderAnfragen() {
+  const data = await api('/admin/anfragen')
+  if (!data.length) return '<p class="text-gray-400 text-center py-12">Noch keine Anfragen.</p>'
+  return `
+    <h2 class="text-2xl font-bold text-gray-800 mb-6">Anfragen (${data.length})</h2>
+    <div class="space-y-3">
+      ${data.map(a => `
+        <div class="bg-white rounded-xl border border-gray-100 p-4">
+          <div class="flex items-start justify-between mb-2">
+            <div>
+              <span class="font-semibold text-gray-800">${a.vorname || ''} ${a.nachname || ''}</span>
+              <span class="text-gray-400 text-sm ml-2">${a.email || ''}</span>
+              ${a.telefon ? `<span class="text-gray-400 text-sm ml-2">Tel: ${a.telefon}</span>` : ''}
+            </div>
+            <div class="flex items-center gap-2">
+              <select onchange="updateAnfrage(${a.id}, this.value)" class="text-xs border rounded-lg px-2 py-1 ${a.status === 'neu' ? 'border-red-300 text-red-600' : 'border-green-300 text-green-700'}">
+                <option value="neu" ${a.status==='neu'?'selected':''}>Neu</option>
+                <option value="bearbeitung" ${a.status==='bearbeitung'?'selected':''}>In Bearbeitung</option>
+                <option value="versendet" ${a.status==='versendet'?'selected':''}>Versendet</option>
+                <option value="erledigt" ${a.status==='erledigt'?'selected':''}>Erledigt</option>
+              </select>
+              <span class="text-xs text-gray-400">${a.erstellt?.split('T')[0] || ''}</span>
+            </div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
+            ${(a.items||[]).map(i => `<div class="flex justify-between"><span>${i.qty}x ${i.name}</span><span class="text-gray-500">${i.preis},-</span></div>`).join('')}
+            <div class="border-t pt-1 mt-1 flex justify-between font-semibold"><span>Gesamt</span><span>${a.total} EUR</span></div>
+          </div>
+          ${a.adresse ? `<p class="text-xs text-gray-500 mt-2">Adresse: ${a.adresse}</p>` : ''}
+          ${a.nachricht ? `<p class="text-xs text-gray-600 mt-1 italic">"${a.nachricht}"</p>` : ''}
+        </div>
+      `).join('')}
+    </div>`
+}
+
+async function updateAnfrage(id, status) {
+  await api(`/admin/anfragen/${id}`, 'PUT', { status })
+}
+
+// ─── USERS ─────────────────────────────────────────────
+async function renderUsers() {
+  const users = await api('/admin/users')
+  return `
+    <h2 class="text-2xl font-bold text-gray-800 mb-6">Mitglieder (${users.length})</h2>
+    <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">E-Mail</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Name</th>
+            <th class="text-center px-4 py-3 font-medium text-gray-600">Verifiziert</th>
+            <th class="text-center px-4 py-3 font-medium text-gray-600">Newsletter</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Registriert</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Letzter Login</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${users.map(u => `
+            <tr class="border-t border-gray-50 hover:bg-gray-50/50">
+              <td class="px-4 py-3">${u.email}</td>
+              <td class="px-4 py-3">${u.vorname || ''} ${u.nachname || ''}</td>
+              <td class="px-4 py-3 text-center">${u.verifiziert ? '<span class="text-green-main">&#10003;</span>' : '<span class="text-gray-300">&#10007;</span>'}</td>
+              <td class="px-4 py-3 text-center">${u.newsletter ? '<span class="text-green-main">&#10003;</span>' : '<span class="text-gray-300">&#10007;</span>'}</td>
+              <td class="px-4 py-3 text-gray-500">${u.erstellt?.split('T')[0] || ''}</td>
+              <td class="px-4 py-3 text-gray-500">${u.letzter_login?.split('T')[0] || '-'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>`
+}
+
+// ─── BLOG ──────────────────────────────────────────────
+let blogPosts = []
+
+async function renderBlog() {
+  blogPosts = await api('/admin/blog')
+  return `
+    <div class="flex items-center justify-between mb-6">
+      <h2 class="text-2xl font-bold text-gray-800">Blog (${blogPosts.length})</h2>
+      <button onclick="showBlogEditor()" class="px-4 py-2 rounded-xl bg-green-main text-white text-sm font-medium hover:bg-green-dark transition-colors">+ Neuer Beitrag</button>
+    </div>
+    <div id="blog-editor" class="hidden mb-6"></div>
+    <div id="blog-list" class="space-y-3">
+      ${blogPosts.length === 0 ? '<p class="text-gray-400 text-center py-8">Noch keine Blog-Beitraege.</p>' :
+        blogPosts.map(p => `
+          <div class="bg-white rounded-xl border border-gray-100 p-4 flex items-start justify-between">
+            <div>
+              <h3 class="font-semibold text-gray-800">${p.titel}</h3>
+              <p class="text-xs text-gray-500">${p.erstellt?.split('T')[0] || ''} · ${p.autor} · ${p.veroeffentlicht ? '<span class="text-green-main">Veroeffentlicht</span>' : '<span class="text-yellow-600">Entwurf</span>'}</p>
+              ${p.auszug ? `<p class="text-sm text-gray-600 mt-1">${p.auszug}</p>` : ''}
+            </div>
+            <div class="flex gap-2 shrink-0">
+              <button onclick="editBlog(${p.id})" class="text-xs px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200">Bearbeiten</button>
+              <button onclick="deleteBlog(${p.id})" class="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100">Loeschen</button>
+            </div>
+          </div>
+        `).join('')}
+    </div>`
+}
+
+function showBlogEditor(post = null) {
+  document.getElementById('blog-editor').classList.remove('hidden')
+  document.getElementById('blog-editor').innerHTML = `
+    <div class="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+      <input id="blog-titel" type="text" placeholder="Titel" value="${post?.titel || ''}" class="w-full px-4 py-3 rounded-lg border border-gray-200 text-sm font-semibold focus:outline-none focus:border-green-main">
+      <input id="blog-auszug" type="text" placeholder="Kurzer Auszug (fuer Newsletter/Vorschau)" value="${post?.auszug || ''}" class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-main">
+      <textarea id="blog-inhalt" placeholder="Inhalt (Markdown)" class="w-full px-4 py-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-green-main resize-y">${post?.inhalt || ''}</textarea>
+      <div class="flex items-center gap-4">
+        <label class="flex items-center gap-2 text-sm">
+          <input id="blog-publish" type="checkbox" ${post?.veroeffentlicht ? 'checked' : ''} class="accent-green-main"> Veroeffentlichen
+        </label>
+        <div class="flex-1"></div>
+        <button onclick="document.getElementById('blog-editor').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">Abbrechen</button>
+        <button onclick="saveBlog(${post?.id || 'null'})" class="px-6 py-2 rounded-xl bg-green-main text-white text-sm font-medium hover:bg-green-dark">Speichern</button>
+      </div>
+    </div>`
+}
+
+async function saveBlog(id) {
+  const data = {
+    titel: document.getElementById('blog-titel').value,
+    inhalt: document.getElementById('blog-inhalt').value,
+    auszug: document.getElementById('blog-auszug').value,
+    veroeffentlicht: document.getElementById('blog-publish').checked,
+  }
+  if (!data.titel || !data.inhalt) return alert('Titel und Inhalt erforderlich')
+  if (id) {
+    await api(`/admin/blog/${id}`, 'PUT', data)
+  } else {
+    await api('/admin/blog', 'POST', data)
+  }
+  loadTab('blog')
+}
+
+function editBlog(id) {
+  const post = blogPosts.find(p => p.id === id)
+  if (post) showBlogEditor(post)
+}
+
+async function deleteBlog(id) {
+  if (!confirm('Blog-Beitrag wirklich loeschen?')) return
+  await api(`/admin/blog/${id}`, 'DELETE')
+  loadTab('blog')
+}
+
+// ─── NEWSLETTER ────────────────────────────────────────
+async function renderNewsletter() {
+  const nls = await api('/admin/newsletter')
+  const stats = await api('/admin/stats')
+  return `
+    <div class="flex items-center justify-between mb-6">
+      <h2 class="text-2xl font-bold text-gray-800">Newsletter</h2>
+      <span class="text-sm text-gray-500">${stats.newsletter_abonnenten} Abonnenten</span>
+    </div>
+
+    <div class="bg-white rounded-xl border border-gray-200 p-5 mb-6 space-y-3">
+      <h3 class="font-semibold text-gray-800">Neuen Newsletter erstellen</h3>
+      <input id="nl-betreff" type="text" placeholder="Betreff" class="w-full px-4 py-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-main">
+
+      <div class="flex gap-2 mb-2">
+        <button onclick="insertBlogIntoNL()" class="text-xs px-3 py-1.5 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100">+ Blog-Beitrag einfuegen</button>
+        <button onclick="insertProductIntoNL()" class="text-xs px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100">+ Produkt einfuegen</button>
+      </div>
+
+      <textarea id="nl-inhalt" placeholder="Newsletter-Inhalt (HTML erlaubt)" class="w-full px-4 py-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-green-main resize-y"></textarea>
+
+      <div class="flex items-center gap-2">
+        <button onclick="previewNL()" class="px-4 py-2 rounded-lg bg-gray-100 text-sm text-gray-600 hover:bg-gray-200">Vorschau</button>
+        <button onclick="saveNL()" class="px-6 py-2 rounded-xl bg-green-main text-white text-sm font-medium hover:bg-green-dark">Speichern</button>
+      </div>
+
+      <div id="nl-preview" class="hidden border rounded-lg p-4 mt-3 bg-gray-50"></div>
+    </div>
+
+    <h3 class="font-semibold text-gray-800 mb-3">Gesendete & gespeicherte Newsletter</h3>
+    <div class="space-y-3">
+      ${nls.length === 0 ? '<p class="text-gray-400 text-center py-8">Noch keine Newsletter.</p>' :
+        nls.map(nl => `
+          <div class="bg-white rounded-xl border border-gray-100 p-4 flex items-start justify-between">
+            <div>
+              <h4 class="font-semibold text-gray-800">${nl.betreff}</h4>
+              <p class="text-xs text-gray-500">
+                ${nl.gesendet ? `Gesendet am ${nl.gesendet_am?.split('T')[0] || ''} an ${nl.empfaenger_count} Empfaenger` : 'Noch nicht gesendet'}
+              </p>
+            </div>
+            ${!nl.gesendet ? `<button onclick="sendNL(${nl.id})" class="text-xs px-4 py-2 rounded-xl bg-green-main text-white font-medium hover:bg-green-dark">Jetzt senden</button>` : '<span class="text-xs text-green-main font-medium">&#10003; Gesendet</span>'}
+          </div>
+        `).join('')}
+    </div>`
+}
+
+async function insertBlogIntoNL() {
+  const posts = await api('/admin/blog')
+  const published = posts.filter(p => p.veroeffentlicht)
+  if (!published.length) return alert('Keine veroeffentlichten Blog-Beitraege vorhanden.')
+  const titles = published.map((p,i) => `${i+1}. ${p.titel}`).join('\n')
+  const choice = prompt('Welchen Beitrag einfuegen?\n\n' + titles)
+  const idx = parseInt(choice) - 1
+  if (isNaN(idx) || !published[idx]) return
+  const post = published[idx]
+  const ta = document.getElementById('nl-inhalt')
+  ta.value += `\n<h2>${post.titel}</h2>\n<p>${post.auszug || ''}</p>\n<p>${post.inhalt.substring(0, 500)}...</p>\n`
+}
+
+function insertProductIntoNL() {
+  const name = prompt('Produktname eingeben:')
+  if (!name) return
+  const ta = document.getElementById('nl-inhalt')
+  ta.value += `\n<div style="background:#f5f5f5;padding:16px;border-radius:8px;margin:12px 0"><h3>${name}</h3><p>Beschreibung hier einfuegen...</p></div>\n`
+}
+
+function previewNL() {
+  const html = document.getElementById('nl-inhalt').value
+  const preview = document.getElementById('nl-preview')
+  preview.innerHTML = html
+  preview.classList.toggle('hidden')
+}
+
+async function saveNL() {
+  const betreff = document.getElementById('nl-betreff').value
+  const inhalt = document.getElementById('nl-inhalt').value
+  if (!betreff || !inhalt) return alert('Betreff und Inhalt erforderlich')
+  await api('/admin/newsletter', 'POST', { betreff, inhalt })
+  loadTab('newsletter')
+}
+
+async function sendNL(id) {
+  if (!confirm('Newsletter jetzt an alle Abonnenten senden?')) return
+  const res = await api(`/admin/newsletter/${id}/send`, 'POST')
+  alert(`Newsletter gesendet an ${res.gesendet} von ${res.empfaenger} Empfaengern.`)
+  loadTab('newsletter')
+}
+
+// ─── SETTINGS ──────────────────────────────────────────
+function renderSettings() {
+  return `
+    <h2 class="text-2xl font-bold text-gray-800 mb-6">Einstellungen</h2>
+
+    <div class="bg-white rounded-xl border border-gray-200 p-5 mb-6 space-y-4">
+      <h3 class="font-semibold text-gray-800">SMTP E-Mail-Server</h3>
+      <p class="text-sm text-gray-500">Konfiguriere den Mailserver fuer Bestaetigungsmails, Anfrage-Benachrichtigungen und Newsletter.</p>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-gray-500 mb-1 block">SMTP Host</label>
+          <input id="smtp-host" type="text" placeholder="smtp.example.com" class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-main">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 mb-1 block">Port</label>
+          <input id="smtp-port" type="text" placeholder="587" class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-main">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 mb-1 block">Benutzername / E-Mail</label>
+          <input id="smtp-user" type="text" placeholder="mail@heildepot.de" class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-main">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 mb-1 block">Passwort</label>
+          <input id="smtp-pass" type="password" placeholder="••••••••" class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-main">
+        </div>
+        <div class="col-span-2">
+          <label class="text-xs text-gray-500 mb-1 block">Absender (From)</label>
+          <input id="smtp-from" type="text" placeholder="Heildepot Freundeskreis <mail@heildepot.de>" class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-main">
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="saveSmtp()" class="px-6 py-2 rounded-xl bg-green-main text-white text-sm font-medium hover:bg-green-dark">Speichern</button>
+        <button onclick="testSmtp()" class="px-4 py-2 rounded-lg bg-gray-100 text-sm text-gray-600 hover:bg-gray-200">Test-Mail senden</button>
+      </div>
+      <div id="smtp-status" class="text-xs hidden"></div>
+    </div>
+
+    <div class="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+      <h3 class="font-semibold text-gray-800">Admin-Konto</h3>
+      <p class="text-sm text-gray-500">Admin E-Mail und Passwort werden ueber die Server-Umgebungsvariablen konfiguriert (ADMIN_EMAIL, ADMIN_PASS). Bei Render.com unter "Environment" aendern.</p>
+    </div>
+
+    <div class="bg-white rounded-xl border border-gray-200 p-5 mt-6 space-y-3">
+      <h3 class="font-semibold text-gray-800">Server-Info</h3>
+      <div id="server-info" class="text-sm text-gray-500">Laden...</div>
+    </div>
+    <script>
+      fetch(API + '/health').then(r=>r.json()).then(d=>{
+        document.getElementById('server-info').innerHTML = 'Status: <span class="text-green-main font-medium">Online</span> · Version: ' + d.version + ' · ' + new Date(d.time).toLocaleString('de')
+      }).catch(()=>{
+        document.getElementById('server-info').innerHTML = '<span class="text-red-500">Server nicht erreichbar</span>'
+      })
+    </script>`
+}
+
+async function saveSmtp() {
+  const data = {
+    host: document.getElementById('smtp-host').value,
+    port: document.getElementById('smtp-port').value,
+    user: document.getElementById('smtp-user').value,
+    pass: document.getElementById('smtp-pass').value,
+    from: document.getElementById('smtp-from').value,
+  }
+  try {
+    await api('/admin/smtp', 'PUT', data)
+    const el = document.getElementById('smtp-status')
+    el.textContent = 'SMTP-Einstellungen gespeichert!'
+    el.className = 'text-xs text-green-main'
+    el.classList.remove('hidden')
+  } catch (err) {
+    const el = document.getElementById('smtp-status')
+    el.textContent = 'Fehler: ' + err.message
+    el.className = 'text-xs text-red-500'
+    el.classList.remove('hidden')
+  }
+}
+
+async function testSmtp() {
+  try {
+    const res = await api('/admin/smtp/test', 'POST')
+    alert(res.message || 'Test-Mail gesendet!')
+  } catch (err) {
+    alert('Fehler: ' + err.message)
+  }
+}
+
+// ─── API HELPER ────────────────────────────────────────
+async function api(path, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } }
+  if (token) opts.headers['Authorization'] = 'Bearer ' + token
+  if (body) opts.body = JSON.stringify(body)
+  const res = await fetch(API + path, opts)
+  const data = await res.json()
+  if (!res.ok) {
+    if (res.status === 401 || res.status === 403) { doLogout(); throw new Error('Session abgelaufen') }
+    throw new Error(data.error || 'Fehler')
+  }
+  return data
+}
+
+// ─── INIT ──────────────────────────────────────────────
+render()
+</script>
+</body>
+</html>

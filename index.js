@@ -5,15 +5,21 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import { marked } from 'marked'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
 import db from './db.js'
-import { initMail, verifyEmail, orderNotification, orderConfirmation, sendNewsletter } from './mail.js'
+import { initMail, reloadMail, verifyEmail, orderNotification, orderConfirmation, sendNewsletter, sendTestMail } from './mail.js'
 
+const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
 const PORT = process.env.PORT || 3001
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
 
 app.use(cors())
 app.use(express.json({ limit: '5mb' }))
+
+// Serve admin panel
+app.get('/admin', (req, res) => res.sendFile(join(__dirname, 'public', 'admin.html')))
 
 // Init mail
 initMail()
@@ -291,6 +297,40 @@ app.get('/api/admin/stats', adminAuth, (req, res) => {
     neue_anfragen: neue.count,
     blog_posts: posts.count,
   })
+})
+
+// ═══════════════════════════════════════════════════════════
+// SMTP CONFIG (Admin)
+// ═══════════════════════════════════════════════════════════
+app.put('/api/admin/smtp', adminAuth, (req, res) => {
+  const { host, port, user, pass, from } = req.body
+  // Save to env-like config in DB
+  db.exec(`CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)`)
+  const upsert = db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)')
+  if (host) upsert.run('MAIL_HOST', host)
+  if (port) upsert.run('MAIL_PORT', port)
+  if (user) upsert.run('MAIL_USER', user)
+  if (pass) upsert.run('MAIL_PASS', pass)
+  if (from) upsert.run('MAIL_FROM', from)
+
+  // Reload mail transporter
+  process.env.MAIL_HOST = host || process.env.MAIL_HOST
+  process.env.MAIL_PORT = port || process.env.MAIL_PORT
+  process.env.MAIL_USER = user || process.env.MAIL_USER
+  process.env.MAIL_PASS = pass || process.env.MAIL_PASS
+  process.env.MAIL_FROM = from || process.env.MAIL_FROM
+  reloadMail()
+
+  res.json({ ok: true, message: 'SMTP-Einstellungen gespeichert und aktiviert' })
+})
+
+app.post('/api/admin/smtp/test', adminAuth, async (req, res) => {
+  try {
+    await sendTestMail(process.env.ADMIN_EMAIL)
+    res.json({ message: `Test-Mail an ${process.env.ADMIN_EMAIL} gesendet!` })
+  } catch (err) {
+    res.status(500).json({ error: 'Mail-Fehler: ' + err.message })
+  }
 })
 
 // ═══════════════════════════════════════════════════════════
