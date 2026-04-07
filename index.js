@@ -22,9 +22,13 @@ app.use(express.json({ limit: '5mb' }))
 import { readFileSync } from 'fs'
 const adminHtml = readFileSync(join(__dirname, 'public', 'admin.html'), 'utf-8')
 app.get('/admin', (req, res) => {
-  res.set('Content-Type', 'text/html; charset=utf-8')
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate')
-  res.send(adminHtml)
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Length': Buffer.byteLength(adminHtml),
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  })
+  res.end(adminHtml)
 })
 
 // Init mail
