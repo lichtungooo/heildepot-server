@@ -107,7 +107,7 @@ async function loadTab(name) {
       case 'users': el.innerHTML = await renderUsers(); break
       case 'blog': el.innerHTML = await renderBlog(); break
       case 'newsletter': el.innerHTML = await renderNewsletter(); break
-      case 'settings': el.innerHTML = renderSettings(); break
+      case 'settings': el.innerHTML = renderSettings(); loadServerInfo(); break
     }
   } catch (err) {
     el.innerHTML = `<p class="text-red-500 text-center py-12">${err.message}</p>`
@@ -417,14 +417,17 @@ function renderSettings() {
     <div class="bg-white rounded-xl border border-gray-200 p-5 mt-6 space-y-3">
       <h3 class="font-semibold text-gray-800">Server-Info</h3>
       <div id="server-info" class="text-sm text-gray-500">Laden...</div>
-    </div>
-    <script>
-      fetch(API + '/health').then(r=>r.json()).then(d=>{
-        document.getElementById('server-info').innerHTML = 'Status: <span class="text-green-main font-medium">Online</span> · Version: ' + d.version + ' · ' + new Date(d.time).toLocaleString('de')
-      }).catch(()=>{
-        document.getElementById('server-info').innerHTML = '<span class="text-red-500">Server nicht erreichbar</span>'
-      })
-    </script>`
+    </div>`
+}
+
+function loadServerInfo() {
+  fetch(API + '/health').then(r=>r.json()).then(d=>{
+    const el = document.getElementById('server-info')
+    if (el) el.innerHTML = 'Status: <span class="text-green-main font-medium">Online</span> &middot; Version: ' + d.version + ' &middot; ' + new Date(d.time).toLocaleString('de')
+  }).catch(()=>{
+    const el = document.getElementById('server-info')
+    if (el) el.innerHTML = '<span class="text-red-500">Server nicht erreichbar</span>'
+  })
 }
 
 async function saveSmtp() {
