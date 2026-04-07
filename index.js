@@ -18,11 +18,13 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
 app.use(cors())
 app.use(express.json({ limit: '5mb' }))
 
-// Serve static files + admin panel
-app.use('/public', express.static(join(__dirname, 'public')))
+// Serve admin panel
+import { readFileSync } from 'fs'
+const adminHtml = readFileSync(join(__dirname, 'public', 'admin.html'), 'utf-8')
 app.get('/admin', (req, res) => {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8')
-  res.sendFile(join(__dirname, 'public', 'admin.html'))
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate')
+  res.send(adminHtml)
 })
 
 // Init mail
