@@ -189,18 +189,112 @@ app.get('/api/blog/:slug', (req, res) => {
 // ADMIN
 // ═══════════════════════════════════════════════════════════
 
-// Admin Login
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@heildepot.de'
-const ADMIN_PASS = process.env.ADMIN_PASS || 'admin123'
-console.log('[Admin] Login konfiguriert fuer:', ADMIN_EMAIL)
+// Seed default super-admin if no admins exist
+const adminCount = db.prepare('SELECT COUNT(*) as count FROM admins').get()
+if (!adminCount || adminCount.count === 0) {
+  const defaultEmail = process.env.ADMIN_EMAIL || 'timo.martin@heildepot.de'
+  const defaultPass = process.env.ADMIN_PASS || 'admin123'
+  const hash = bcrypt.hashSync(defaultPass, 10)
+  db.prepare('INSERT INTO admins (email, passwort, name, rolle, rechte) VALUES (?, ?, ?, ?, ?)').run(
+    defaultEmail, hash, 'Timo', 'superadmin',
+    JSON.stringify({ anfragen: true, users: true, blog: true, newsletter: true, settings: true, admins: true })
+  )
+  console.log('[Admin] Standard-Superadmin erstellt:', defaultEmail)
+}
 
+// Admin Login (aus Datenbank)
 app.post('/api/admin/login', (req, res) => {
   const { email, passwort } = req.body
-  if (email === ADMIN_EMAIL && passwort === ADMIN_PASS) {
-    const token = jwt.sign({ id: 0, email, admin: true }, JWT_SECRET, { expiresIn: '7d' })
-    return res.json({ token, admin: true })
+  if (!email || !passwort) return res.status(400).json({ error: 'E-Mail und Passwort erforderlich' })
+
+  const admin = db.prepare('SELECT * FROM admins WHERE email = ? AND aktiv = 1').get(email)
+  if (!admin || !bcrypt.compareSync(passwort, admin.passwort)) {
+    return res.status(401).json({ error: 'Falsche Zugangsdaten' })
   }
-  res.status(401).json({ error: 'Falsche Zugangsdaten' })
+
+  db.prepare('UPDATE admins SET letzter_login = datetime("now") WHERE id = ?').run(admin.id)
+
+  const rechte = JSON.parse(admin.rechte || '{}')
+  const token = jwt.sign({ id: admin.id, email: admin.email, admin: true, rolle: admin.rolle, rechte }, JWT_SECRET, { expiresIn: '7d' })
+  res.json({ token, admin: true, name: admin.name, rolle: admin.rolle, rechte })
+})
+
+// Admin: Eigenes Profil
+app.get('/api/admin/me', adminAuth, (req, res) => {
+  const admin = db.prepare('SELECT id, email, name, rolle, rechte, erstellt, letzter_login FROM admins WHERE id = ?').get(req.user.id)
+  if (!admin) return res.status(404).json({ error: 'Admin nicht gefunden' })
+  res.json({ ...admin, rechte: JSON.parse(admin.rechte || '{}') })
+})
+
+// Admin: Passwort aendern
+app.put('/api/admin/me/password', adminAuth, (req, res) => {
+  const { altes_passwort, neues_passwort } = req.body
+  if (!altes_passwort || !neues_passwort) return res.status(400).json({ error: 'Altes und neues Passwort erforderlich' })
+  if (neues_passwort.length < 4) return res.status(400).json({ error: 'Passwort muss mindestens 4 Zeichen haben' })
+
+  const admin = db.prepare('SELECT * FROM admins WHERE id = ?').get(req.user.id)
+  if (!bcrypt.compareSync(altes_passwort, admin.passwort)) {
+    return res.status(401).json({ error: 'Altes Passwort falsch' })
+  }
+
+  db.prepare('UPDATE admins SET passwort = ? WHERE id = ?').run(bcrypt.hashSync(neues_passwort, 10), req.user.id)
+  res.json({ ok: true })
+})
+
+// Admin-Verwaltung (nur Superadmin)
+function superAdminAuth(req, res, next) {
+  adminAuth(req, res, () => {
+    if (req.user.rolle !== 'superadmin') return res.status(403).json({ error: 'Nur Superadmin darf Admins verwalten' })
+    next()
+  })
+}
+
+// Alle Admins auflisten
+app.get('/api/admin/admins', superAdminAuth, (req, res) => {
+  const admins = db.prepare('SELECT id, email, name, rolle, rechte, aktiv, erstellt, letzter_login FROM admins ORDER BY erstellt').all()
+  res.json(admins.map(a => ({ ...a, rechte: JSON.parse(a.rechte || '{}') })))
+})
+
+// Neuen Admin anlegen
+app.post('/api/admin/admins', superAdminAuth, (req, res) => {
+  const { email, passwort, name, rolle, rechte } = req.body
+  if (!email || !passwort) return res.status(400).json({ error: 'E-Mail und Passwort erforderlich' })
+
+  const existing = db.prepare('SELECT id FROM admins WHERE email = ?').get(email)
+  if (existing) return res.status(409).json({ error: 'E-Mail bereits vergeben' })
+
+  const hash = bcrypt.hashSync(passwort, 10)
+  const result = db.prepare('INSERT INTO admins (email, passwort, name, rolle, rechte) VALUES (?, ?, ?, ?, ?)').run(
+    email, hash, name || '', rolle || 'redakteur', JSON.stringify(rechte || {})
+  )
+  res.json({ id: result.lastInsertRowid })
+})
+
+// Admin bearbeiten
+app.put('/api/admin/admins/:id', superAdminAuth, (req, res) => {
+  const { name, rolle, rechte, aktiv } = req.body
+  const admin = db.prepare('SELECT * FROM admins WHERE id = ?').get(req.params.id)
+  if (!admin) return res.status(404).json({ error: 'Admin nicht gefunden' })
+
+  db.prepare('UPDATE admins SET name=?, rolle=?, rechte=?, aktiv=? WHERE id=?').run(
+    name ?? admin.name, rolle ?? admin.rolle, JSON.stringify(rechte ?? JSON.parse(admin.rechte || '{}')), aktiv ?? admin.aktiv, req.params.id
+  )
+  res.json({ ok: true })
+})
+
+// Admin Passwort zuruecksetzen (Superadmin)
+app.put('/api/admin/admins/:id/password', superAdminAuth, (req, res) => {
+  const { passwort } = req.body
+  if (!passwort || passwort.length < 4) return res.status(400).json({ error: 'Passwort muss mindestens 4 Zeichen haben' })
+  db.prepare('UPDATE admins SET passwort = ? WHERE id = ?').run(bcrypt.hashSync(passwort, 10), req.params.id)
+  res.json({ ok: true })
+})
+
+// Admin loeschen
+app.delete('/api/admin/admins/:id', superAdminAuth, (req, res) => {
+  if (parseInt(req.params.id) === req.user.id) return res.status(400).json({ error: 'Du kannst dich nicht selbst loeschen' })
+  db.prepare('DELETE FROM admins WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
 })
 
 // Admin: Alle Anfragen

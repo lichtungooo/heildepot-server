@@ -75,6 +75,20 @@ db.run(`
   )
 `)
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS admins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    passwort TEXT NOT NULL,
+    name TEXT DEFAULT '',
+    rolle TEXT DEFAULT 'redakteur',
+    rechte TEXT DEFAULT '{}',
+    aktiv INTEGER DEFAULT 1,
+    erstellt TEXT DEFAULT (datetime('now')),
+    letzter_login TEXT
+  )
+`)
+
 // Save to disk periodically
 function save() {
   const data = db.export()
